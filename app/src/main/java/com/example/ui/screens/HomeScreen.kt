@@ -33,6 +33,8 @@ import com.example.R
 import com.example.model.FoodType
 import com.example.model.Property
 import com.example.model.PropertyType
+import com.example.model.calculateDistanceKm
+import com.example.model.formatDistance
 import com.example.ui.components.PropertyCard
 import com.example.ui.components.PurpleRoomsTopBar
 import com.example.ui.theme.*
@@ -50,21 +52,15 @@ fun HomeScreen(
     onNavigateToProfile: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var showLocationSheet by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
 
-    val locations = listOf(
-        "Vadodara, Gujarat",
-        "Ahmedabad, Gujarat",
-        "Surat, Gujarat",
-        "Mumbai, Maharashtra",
-        "Pune, Maharashtra",
-        "Bengaluru, Karnataka",
-        "Delhi NCR"
-    )
-
-    // Filter properties based on selected category & search query
-    val filteredProperties = remember(uiState.properties, uiState.selectedCategory, uiState.searchQuery) {
+    // Filter and sort properties based on selected category, search query, and proximity to selected location
+    val filteredProperties = remember(
+        uiState.properties,
+        uiState.selectedCategory,
+        uiState.searchQuery,
+        uiState.selectedLocationData
+    ) {
         uiState.properties.filter { prop ->
             val matchCat = uiState.selectedCategory == PropertyType.ALL || prop.propertyType == uiState.selectedCategory
             val matchQuery = uiState.searchQuery.isBlank() ||
@@ -72,6 +68,13 @@ fun HomeScreen(
                     prop.location.contains(uiState.searchQuery, ignoreCase = true) ||
                     prop.propertyType.displayName.contains(uiState.searchQuery, ignoreCase = true)
             matchCat && matchQuery
+        }.sortedBy { prop ->
+            calculateDistanceKm(
+                uiState.selectedLocationData.latitude,
+                uiState.selectedLocationData.longitude,
+                prop.latitude,
+                prop.longitude
+            )
         }
     }
 
@@ -79,7 +82,7 @@ fun HomeScreen(
         topBar = {
             PurpleRoomsTopBar(
                 selectedLocation = uiState.selectedLocation,
-                onLocationClick = { showLocationSheet = true },
+                onLocationClick = { viewModel.openChooseLocationScreen() },
                 onSavedClick = onNavigateToSaved,
                 onNotificationsClick = onNavigateToNotifications,
                 onProfileClick = onNavigateToProfile,
@@ -275,6 +278,69 @@ fun HomeScreen(
                 }
             }
 
+            // Explore on Map Banner
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { viewModel.openMapScreen() }
+                        .testTag("home_explore_map_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PurpleBorder)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(PurpleSubtle),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Map,
+                                    contentDescription = "Map View",
+                                    tint = PurplePrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Explore on Map",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "View prices & nearby rooms in ${uiState.selectedLocation}",
+                                    fontSize = 12.sp,
+                                    color = TextSecondary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Open Map",
+                            tint = PurplePrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
             // Featured Header
             item {
                 Row(
@@ -282,12 +348,19 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Featured Properties",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
+                    Column {
+                        Text(
+                            text = "Properties near ${uiState.selectedLocation.split(",").firstOrNull() ?: uiState.selectedLocation}",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Sorted by proximity to your selected location",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                    }
                     Text(
                         text = "View All",
                         fontSize = 13.sp,
@@ -338,74 +411,20 @@ fun HomeScreen(
                 }
             } else {
                 items(filteredProperties, key = { it.id }) { property ->
+                    val dist = calculateDistanceKm(
+                        uiState.selectedLocationData.latitude,
+                        uiState.selectedLocationData.longitude,
+                        property.latitude,
+                        property.longitude
+                    )
                     PropertyCard(
                         property = property,
                         isFavorite = uiState.savedPropertyIds.contains(property.id),
                         onPropertyClick = { viewModel.selectProperty(property) },
-                        onFavoriteToggle = { viewModel.toggleFavorite(property.id) }
+                        onFavoriteToggle = { viewModel.toggleFavorite(property.id) },
+                        distanceText = formatDistance(dist)
                     )
                 }
-            }
-        }
-    }
-
-    // Location BottomSheet
-    if (showLocationSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showLocationSheet = false },
-            containerColor = Color.White
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
-                Text(
-                    text = "Select Your City / Location",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                locations.forEach { loc ->
-                    val isSelected = uiState.selectedLocation == loc
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                viewModel.setLocation(loc)
-                                showLocationSheet = false
-                            }
-                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.LocationOn,
-                                contentDescription = null,
-                                tint = if (isSelected) PurplePrimary else TextSecondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = loc,
-                                fontSize = 15.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) PurplePrimary else TextPrimary
-                            )
-                        }
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Selected",
-                                tint = PurplePrimary
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(20.dp))
             }
         }
     }

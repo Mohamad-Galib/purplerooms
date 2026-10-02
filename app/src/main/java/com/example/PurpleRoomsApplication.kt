@@ -9,12 +9,15 @@ class PurpleRoomsApplication : Application() {
         private set
     lateinit var authRepository: AuthRepository
         private set
+    lateinit var locationRepository: com.example.data.repository.LocationRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         database = AppDatabase.getInstance(this)
         authRepository = AuthRepository(database.userDao())
+        locationRepository = com.example.data.repository.LocationRepository(database.locationDao())
     }
 
     companion object {

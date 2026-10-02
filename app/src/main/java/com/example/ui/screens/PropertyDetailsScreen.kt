@@ -47,6 +47,7 @@ fun PropertyDetailsScreen(
     onFavoriteToggle: () -> Unit,
     onChatClick: () -> Unit,
     onBookNowClick: () -> Unit,
+    onMapClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -556,7 +557,7 @@ fun PropertyDetailsScreen(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = PurplePrimary,
-                                modifier = Modifier.clickable { showMapModal = true }
+                                modifier = Modifier.clickable { onMapClick() }
                             )
                         }
 
@@ -569,7 +570,7 @@ fun PropertyDetailsScreen(
                                 .height(120.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0xFFE9F0FA))
-                                .clickable { showMapModal = true },
+                                .clickable { onMapClick() },
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {

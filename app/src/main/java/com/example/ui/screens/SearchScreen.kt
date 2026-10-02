@@ -22,6 +22,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.PropertyType
+import com.example.model.calculateDistanceKm
+import com.example.model.formatDistance
 import com.example.ui.components.PrimaryPurpleButton
 import com.example.ui.components.PropertyCard
 import com.example.ui.components.PurpleRoomsTopBar
@@ -47,7 +49,8 @@ fun SearchScreen(
         uiState.searchQuery,
         uiState.minBudget,
         uiState.maxBudget,
-        uiState.selectedAmenities
+        uiState.selectedAmenities,
+        uiState.selectedLocationData
     ) {
         uiState.properties.filter { prop ->
             val matchCat = uiState.selectedCategory == PropertyType.ALL || prop.propertyType == uiState.selectedCategory
@@ -59,6 +62,13 @@ fun SearchScreen(
                     uiState.selectedAmenities.all { sel -> prop.amenities.any { it.contains(sel, ignoreCase = true) } }
 
             matchCat && matchQuery && matchBudget && matchAmenities
+        }.sortedBy { prop ->
+            calculateDistanceKm(
+                uiState.selectedLocationData.latitude,
+                uiState.selectedLocationData.longitude,
+                prop.latitude,
+                prop.longitude
+            )
         }
     }
 
@@ -66,7 +76,7 @@ fun SearchScreen(
         topBar = {
             PurpleRoomsTopBar(
                 selectedLocation = uiState.selectedLocation,
-                onLocationClick = { },
+                onLocationClick = { viewModel.openChooseLocationScreen() },
                 onSavedClick = onNavigateToSaved,
                 onNotificationsClick = onNavigateToNotifications,
                 onProfileClick = onNavigateToProfile,
@@ -327,13 +337,25 @@ fun SearchScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "${filteredResults.size} Properties Found",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column {
+                        Text(
+                            text = "${filteredResults.size} Properties Found",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "Near ${uiState.selectedLocation}",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterButton(
+                            icon = Icons.Default.Map,
+                            text = "Map",
+                            onClick = { viewModel.openMapScreen() }
+                        )
                         FilterButton(icon = Icons.Default.SwapVert, text = "Sort")
                         FilterButton(icon = Icons.Default.FilterList, text = "Filter")
                     }
@@ -342,11 +364,18 @@ fun SearchScreen(
 
             // Results List
             items(filteredResults, key = { it.id }) { property ->
+                val dist = calculateDistanceKm(
+                    uiState.selectedLocationData.latitude,
+                    uiState.selectedLocationData.longitude,
+                    property.latitude,
+                    property.longitude
+                )
                 PropertyCard(
                     property = property,
                     isFavorite = uiState.savedPropertyIds.contains(property.id),
                     onPropertyClick = { viewModel.selectProperty(property) },
-                    onFavoriteToggle = { viewModel.toggleFavorite(property.id) }
+                    onFavoriteToggle = { viewModel.toggleFavorite(property.id) },
+                    distanceText = formatDistance(dist)
                 )
             }
         }
@@ -414,12 +443,15 @@ private fun FilterChipItem(
 @Composable
 private fun FilterButton(
     icon: ImageVector,
-    text: String
+    text: String,
+    onClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
-            .background(Color.White, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.White)
             .border(1.dp, PurpleBorder, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

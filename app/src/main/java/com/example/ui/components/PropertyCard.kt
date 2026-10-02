@@ -31,6 +31,7 @@ fun PropertyCard(
     isFavorite: Boolean,
     onPropertyClick: () -> Unit,
     onFavoriteToggle: () -> Unit,
+    distanceText: String? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -159,8 +160,11 @@ fun PropertyCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Location with pin
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Location with pin and distance
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Icon(
                         imageVector = Icons.Default.LocationOn,
                         contentDescription = "Location",
@@ -169,10 +173,11 @@ fun PropertyCard(
                     )
                     Spacer(modifier = Modifier.width(3.dp))
                     Text(
-                        text = property.location,
+                        text = if (distanceText != null) "${property.location} • $distanceText" else property.location,
                         fontSize = 12.sp,
                         color = TextSecondary,
-                        maxLines = 1
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f)
                     )
                 }
 

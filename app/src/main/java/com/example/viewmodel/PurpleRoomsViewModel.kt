@@ -25,6 +25,8 @@ enum class AppScreen {
     COMPLETE_PROFILE,
     SIGNUP,
     FORGOT_PASSWORD,
+    CHOOSE_LOCATION,
+    MAP_SCREEN,
     STUDENT_HOME,
     SEARCH_EXPLORE,
     PROPERTY_DETAILS,
@@ -82,7 +84,29 @@ data class UiState(
     val newRegistrationMobile: String = "",
     val isSessionRestored: Boolean = false,
     val securityAccessDeniedMessage: String? = null,
+    val selectedLocationData: LocationData = LocationData(
+        placeId = "city_vadodara",
+        latitude = 22.3072,
+        longitude = 73.1812,
+        locality = "Alkapuri",
+        city = "Vadodara",
+        state = "Gujarat",
+        country = "India",
+        pincode = "390007",
+        formattedAddress = "Alkapuri, Vadodara, Gujarat",
+        displayName = "Vadodara, Gujarat"
+    ),
     val selectedLocation: String = "Vadodara, Gujarat",
+    val recentLocations: List<LocationData> = emptyList(),
+    val popularCities: List<LocationData> = emptyList(),
+    val locationSearchResults: List<LocationData> = emptyList(),
+    val isDetectingLocation: Boolean = false,
+    val locationDetectionError: String? = null,
+    val locationPermissionDenied: Boolean = false,
+    val gpsDisabled: Boolean = false,
+    val mapSelectedProperty: Property? = null,
+    val mapCenterLat: Double = 22.3072,
+    val mapCenterLng: Double = 73.1812,
     val searchQuery: String = "",
     val selectedCategory: PropertyType = PropertyType.ALL,
     val minBudget: Float = 3000f,
@@ -113,7 +137,8 @@ data class UiState(
 )
 
 class PurpleRoomsViewModel(
-    customAuthRepository: AuthRepository? = null
+    customAuthRepository: AuthRepository? = null,
+    customLocationRepository: com.example.data.repository.LocationRepository? = null
 ) : ViewModel() {
 
     private val authRepo: AuthRepository by lazy {
@@ -139,38 +164,74 @@ class PurpleRoomsViewModel(
         }
     }
 
+    private val locationRepo: com.example.data.repository.LocationRepository by lazy {
+        customLocationRepository ?: run {
+            val app = PurpleRoomsApplication.instance
+            if (app != null) {
+                app.locationRepository
+            } else {
+                val context = try {
+                    val appClass = Class.forName("androidx.test.core.app.ApplicationProvider")
+                    val method = appClass.getMethod("getApplicationContext")
+                    method.invoke(null) as android.content.Context
+                } catch (e: Throwable) {
+                    null
+                }
+                if (context != null) {
+                    val db = AppDatabase.getInstance(context)
+                    com.example.data.repository.LocationRepository(db.locationDao())
+                } else {
+                    com.example.data.repository.LocationRepository()
+                }
+            }
+        }
+    }
+
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
-    init {
-        viewModelScope.launch {
-            try {
-                authRepo.initializePreSeededUsers()
-                val restoredUser = authRepo.restoreActiveSession()
-                if (restoredUser != null) {
-                    val isOwner = (restoredUser.role == UserRole.OWNER)
-                    _uiState.update {
-                        it.copy(
-                            currentUser = restoredUser,
-                            isOwnerMode = isOwner,
-                            intendedRole = restoredUser.role,
-                            userProfile = UserProfile(
-                                id = restoredUser.id,
-                                name = restoredUser.name,
-                                email = restoredUser.email,
-                                phone = restoredUser.mobile,
-                                ownerType = if (isOwner) "Individual Owner" else "Student / Resident"
-                            ),
-                            currentScreen = if (isOwner) AppScreen.OWNER_DASHBOARD else AppScreen.STUDENT_HOME,
-                            screenStack = listOf(if (isOwner) AppScreen.OWNER_DASHBOARD else AppScreen.STUDENT_HOME),
-                            currentTab = if (isOwner) BottomNavTab.OWNER_PROPERTIES else BottomNavTab.HOME,
-                            isSessionRestored = true
-                        )
-                    }
+    val initJob: kotlinx.coroutines.Job = viewModelScope.launch {
+        try {
+            authRepo.initializePreSeededUsers()
+            val restoredUser = authRepo.restoreActiveSession()
+            if (restoredUser != null) {
+                val isOwner = (restoredUser.role == UserRole.OWNER)
+                _uiState.update {
+                    it.copy(
+                        currentUser = restoredUser,
+                        isOwnerMode = isOwner,
+                        intendedRole = restoredUser.role,
+                        userProfile = UserProfile(
+                            id = restoredUser.id,
+                            name = restoredUser.name,
+                            email = restoredUser.email,
+                            phone = restoredUser.mobile,
+                            ownerType = if (isOwner) "Individual Owner" else "Student / Resident"
+                        ),
+                        currentScreen = if (isOwner) AppScreen.OWNER_DASHBOARD else AppScreen.STUDENT_HOME,
+                        screenStack = listOf(if (isOwner) AppScreen.OWNER_DASHBOARD else AppScreen.STUDENT_HOME),
+                        currentTab = if (isOwner) BottomNavTab.OWNER_PROPERTIES else BottomNavTab.HOME,
+                        isSessionRestored = true
+                    )
                 }
-            } catch (e: Exception) {
-                // Ignore initialization failures in testing environments
             }
+
+            // Initialize location system
+            val popular = locationRepo.popularCities
+            val recent = locationRepo.getRecentLocations()
+            val defaultLoc = recent.firstOrNull() ?: popular.firstOrNull() ?: LocationData()
+            _uiState.update {
+                it.copy(
+                    popularCities = popular,
+                    recentLocations = recent,
+                    selectedLocationData = defaultLoc,
+                    selectedLocation = if (defaultLoc.locality.isNotBlank() && defaultLoc.locality != defaultLoc.city) "${defaultLoc.locality}, ${defaultLoc.city}" else "${defaultLoc.city}, ${defaultLoc.state}",
+                    mapCenterLat = defaultLoc.latitude,
+                    mapCenterLng = defaultLoc.longitude
+                )
+            }
+        } catch (e: Exception) {
+            // Ignore initialization failures in testing environments
         }
     }
 
@@ -317,8 +378,136 @@ class PurpleRoomsViewModel(
         }
     }
 
+    fun openChooseLocationScreen() {
+        navigateTo(AppScreen.CHOOSE_LOCATION)
+    }
+
+    fun openMapScreen() {
+        navigateTo(AppScreen.MAP_SCREEN)
+    }
+
     fun setLocation(location: String) {
         _uiState.update { it.copy(selectedLocation = location) }
+    }
+
+    fun selectLocation(location: LocationData) {
+        val display = if (location.locality.isNotBlank() && location.locality != location.city) {
+            "${location.locality}, ${location.city}"
+        } else {
+            "${location.city}, ${location.state}"
+        }
+
+        _uiState.update {
+            it.copy(
+                selectedLocationData = location,
+                selectedLocation = display,
+                mapCenterLat = location.latitude,
+                mapCenterLng = location.longitude,
+                locationSearchResults = emptyList(),
+                locationPermissionDenied = false,
+                gpsDisabled = false
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                locationRepo.saveRecentLocation(location)
+                val updatedRecents = locationRepo.getRecentLocations()
+                _uiState.update { it.copy(recentLocations = updatedRecents) }
+            } catch (e: Exception) {
+                // Ignore in tests
+            }
+        }
+    }
+
+    fun detectDeviceLocation(context: android.content.Context): kotlinx.coroutines.Job {
+        _uiState.update {
+            it.copy(
+                isDetectingLocation = true,
+                locationDetectionError = null,
+                locationPermissionDenied = false
+            )
+        }
+
+        return viewModelScope.launch {
+            try {
+                val detected = locationRepo.detectCurrentGpsLocation(context)
+                selectLocation(detected)
+                _uiState.update {
+                    it.copy(
+                        isDetectingLocation = false,
+                        locationDetectionError = null,
+                        currentScreen = AppScreen.STUDENT_HOME,
+                        screenStack = listOf(AppScreen.STUDENT_HOME)
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isDetectingLocation = false,
+                        locationDetectionError = e.message ?: "Failed to detect GPS location"
+                    )
+                }
+            }
+        }
+    }
+
+    fun onLocationPermissionDenied() {
+        _uiState.update {
+            it.copy(
+                locationPermissionDenied = true,
+                isDetectingLocation = false
+            )
+        }
+    }
+
+    fun clearLocationPermissionError() {
+        _uiState.update {
+            it.copy(
+                locationPermissionDenied = false,
+                gpsDisabled = false,
+                locationDetectionError = null
+            )
+        }
+    }
+
+    fun searchLocationAutocomplete(query: String, context: android.content.Context?): kotlinx.coroutines.Job {
+        return viewModelScope.launch {
+            try {
+                val results = locationRepo.searchLocations(query, context)
+                _uiState.update { it.copy(locationSearchResults = results) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(locationSearchResults = emptyList()) }
+            }
+        }
+    }
+
+    fun clearRecentLocations() {
+        viewModelScope.launch {
+            locationRepo.clearRecentLocations()
+            _uiState.update { it.copy(recentLocations = emptyList()) }
+        }
+    }
+
+    fun deleteRecentLocation(placeId: String) {
+        viewModelScope.launch {
+            locationRepo.deleteRecentLocation(placeId)
+            val updated = locationRepo.getRecentLocations()
+            _uiState.update { it.copy(recentLocations = updated) }
+        }
+    }
+
+    fun updateMapCenter(lat: Double, lng: Double) {
+        _uiState.update {
+            it.copy(
+                mapCenterLat = lat,
+                mapCenterLng = lng
+            )
+        }
+    }
+
+    fun selectMapProperty(property: Property?) {
+        _uiState.update { it.copy(mapSelectedProperty = property) }
     }
 
     // Booking flow methods

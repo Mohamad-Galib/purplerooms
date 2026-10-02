@@ -12,6 +12,9 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE LOWER(email) = LOWER(:email) LIMIT 1")
     suspend fun getUserByEmail(email: String): UserEntity?
 
+    @Query("SELECT * FROM users WHERE REPLACE(REPLACE(REPLACE(mobile, ' ', ''), '-', ''), '+91', '') = :cleanDigits OR mobile = :cleanDigits LIMIT 1")
+    suspend fun getUserByCleanMobile(cleanDigits: String): UserEntity?
+
     @Query("SELECT * FROM users WHERE mobile = :mobile OR mobile = :trimmedMobile LIMIT 1")
     suspend fun getUserByMobile(mobile: String, trimmedMobile: String = mobile.replace("+91", "").trim()): UserEntity?
 

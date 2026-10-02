@@ -171,7 +171,8 @@ class AuthRepository(
         activeOtps.remove(cleanMobile)
 
         // Check if user already exists
-        val existingUser = userDao.getUserByMobile(cleanMobile)
+        val existingUser = userDao.getUserByCleanMobile(cleanMobile)
+            ?: userDao.getUserByMobile(cleanMobile)
             ?: userDao.getUserByMobile("+91 $cleanMobile")
 
         if (existingUser != null) {

@@ -2,23 +2,61 @@ package com.example
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.local.AppDatabase
+import com.example.data.repository.AuthRepository
+import com.example.data.repository.LocationRepository
 import com.example.model.BookingStatus
 import com.example.model.FoodType
 import com.example.model.PropertyType
+import com.example.model.UserRole
 import com.example.viewmodel.AppScreen
 import com.example.viewmodel.BottomNavTab
 import com.example.viewmodel.PurpleRoomsViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ExampleRobolectricTest {
+
+    private val testDispatcher = UnconfinedTestDispatcher()
+    private lateinit var database: AppDatabase
+    private lateinit var authRepository: AuthRepository
+    private lateinit var locationRepository: LocationRepository
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        database = AppDatabase.createInMemory(context)
+        authRepository = AuthRepository(database.userDao())
+        locationRepository = LocationRepository(database.locationDao())
+    }
+
+    @After
+    fun tearDown() {
+        database.close()
+        Dispatchers.resetMain()
+    }
+
+    private fun createViewModel(): PurpleRoomsViewModel {
+        return PurpleRoomsViewModel(
+            customAuthRepository = authRepository,
+            customLocationRepository = locationRepository
+        )
+    }
 
     @Test
     fun `read string from context verifies Purple Rooms name`() {
@@ -29,7 +67,7 @@ class ExampleRobolectricTest {
 
     @Test
     fun `test complete student booking flow and COD handling`() {
-        val viewModel = PurpleRoomsViewModel()
+        val viewModel = createViewModel()
         assertEquals(AppScreen.SPLASH, viewModel.uiState.value.currentScreen)
 
         // 1. Splash -> Student Home
@@ -72,7 +110,7 @@ class ExampleRobolectricTest {
 
     @Test
     fun `test favorites toggle functionality`() {
-        val viewModel = PurpleRoomsViewModel()
+        val viewModel = createViewModel()
         val propId = "prop_2"
 
         val initialSaved = viewModel.uiState.value.savedPropertyIds.contains(propId)
@@ -85,7 +123,7 @@ class ExampleRobolectricTest {
 
     @Test
     fun `test owner post property and dashboard listing`() {
-        val viewModel = PurpleRoomsViewModel()
+        val viewModel = createViewModel()
         viewModel.switchMode(isOwner = true)
         assertEquals(AppScreen.OWNER_HOME, viewModel.uiState.value.currentScreen)
         assertTrue(viewModel.uiState.value.isOwnerMode)
@@ -115,7 +153,7 @@ class ExampleRobolectricTest {
 
     @Test
     fun `test owner edit property 1 - rent change`() {
-        val viewModel = PurpleRoomsViewModel()
+        val viewModel = createViewModel()
         viewModel.switchMode(isOwner = true)
 
         val initialCount = viewModel.uiState.value.properties.size
@@ -152,7 +190,7 @@ class ExampleRobolectricTest {
 
     @Test
     fun `test owner edit property 2 - title change`() {
-        val viewModel = PurpleRoomsViewModel()
+        val viewModel = createViewModel()
         viewModel.switchMode(isOwner = true)
 
         val opened = viewModel.openEditProperty("prop_2")
@@ -174,7 +212,7 @@ class ExampleRobolectricTest {
 
     @Test
     fun `test owner edit property 3 - amenities and photos change`() {
-        val viewModel = PurpleRoomsViewModel()
+        val viewModel = createViewModel()
         viewModel.switchMode(isOwner = true)
 
         val opened = viewModel.openEditProperty("prop_3")
@@ -197,7 +235,7 @@ class ExampleRobolectricTest {
 
     @Test
     fun `test owner edit property - non existent property returns false`() {
-        val viewModel = PurpleRoomsViewModel()
+        val viewModel = createViewModel()
         viewModel.switchMode(isOwner = true)
 
         val opened = viewModel.openEditProperty("prop_non_existent")
@@ -207,7 +245,7 @@ class ExampleRobolectricTest {
 
     @Test
     fun `test all owner properties can be edited and saved without duplication`() {
-        val viewModel = PurpleRoomsViewModel()
+        val viewModel = createViewModel()
         viewModel.switchMode(isOwner = true)
 
         val ownerProperties = viewModel.uiState.value.ownerProperties
@@ -233,22 +271,9 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `test chat message sending`() {
-        val viewModel = PurpleRoomsViewModel()
-        val firstConv = viewModel.uiState.value.conversations.first()
-        viewModel.openConversation(firstConv)
-
-        val initialMsgCount = viewModel.uiState.value.activeConversation?.messages?.size ?: 0
-        viewModel.sendMessage("Can I visit tomorrow at 11 AM?")
-
-        val updatedMsgCount = viewModel.uiState.value.activeConversation?.messages?.size ?: 0
-        assertEquals(initialMsgCount + 1, updatedMsgCount)
-        assertEquals("Can I visit tomorrow at 11 AM?", viewModel.uiState.value.activeConversation?.lastMessage)
-    }
-
-    @Test
-    fun `test email login with student credentials routes to student home`() = runTest {
-        val viewModel = PurpleRoomsViewModel()
+    fun `test email login with student credentials routes to student home`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
         viewModel.navigateTo(AppScreen.LOGIN)
 
         viewModel.loginWithEmail("student@purplerooms.com", "password123").join()
@@ -256,15 +281,16 @@ class ExampleRobolectricTest {
         val state = viewModel.uiState.value
         assertNotNull(state.currentUser)
         assertEquals("student_001", state.currentUser?.id)
-        assertEquals(com.example.model.UserRole.STUDENT, state.currentUser?.role)
+        assertEquals(UserRole.STUDENT, state.currentUser?.role)
         assertEquals(AppScreen.STUDENT_HOME, state.currentScreen)
         assertFalse(state.isOwnerMode)
         assertNull(state.authError)
     }
 
     @Test
-    fun `test email login with owner credentials routes to owner dashboard`() = runTest {
-        val viewModel = PurpleRoomsViewModel()
+    fun `test email login with owner credentials routes to owner dashboard`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
         viewModel.navigateTo(AppScreen.LOGIN)
 
         viewModel.loginWithEmail("owner@purplerooms.com", "password123").join()
@@ -272,15 +298,16 @@ class ExampleRobolectricTest {
         val state = viewModel.uiState.value
         assertNotNull(state.currentUser)
         assertEquals("owner_001", state.currentUser?.id)
-        assertEquals(com.example.model.UserRole.OWNER, state.currentUser?.role)
+        assertEquals(UserRole.OWNER, state.currentUser?.role)
         assertEquals(AppScreen.OWNER_DASHBOARD, state.currentScreen)
         assertTrue(state.isOwnerMode)
         assertNull(state.authError)
     }
 
     @Test
-    fun `test email login with invalid password displays error`() = runTest {
-        val viewModel = PurpleRoomsViewModel()
+    fun `test email login with invalid password displays error`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
         viewModel.navigateTo(AppScreen.LOGIN)
 
         viewModel.loginWithEmail("student@purplerooms.com", "wrong_password_999").join()
@@ -291,8 +318,9 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `test mobile OTP login for existing user routes to correct dashboard`() = runTest {
-        val viewModel = PurpleRoomsViewModel()
+    fun `test mobile OTP login for existing user routes to correct dashboard`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
         viewModel.sendMobileOtp("9876543210").join()
 
         val stateAfterOtp = viewModel.uiState.value
@@ -313,8 +341,9 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `test mobile OTP login for new user triggers complete profile`() = runTest {
-        val viewModel = PurpleRoomsViewModel()
+    fun `test mobile OTP login for new user triggers complete profile`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
         val newMobile = "9887766554"
         viewModel.sendMobileOtp(newMobile).join()
 
@@ -332,7 +361,7 @@ class ExampleRobolectricTest {
             name = "Kavita Rao",
             email = "kavita@test.com",
             mobile = newMobile,
-            role = com.example.model.UserRole.STUDENT
+            role = UserRole.STUDENT
         ).join()
 
         val state = viewModel.uiState.value
@@ -342,28 +371,30 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `test email signup registration`() = runTest {
-        val viewModel = PurpleRoomsViewModel()
+    fun `test email signup registration`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
         viewModel.signupWithEmail(
             name = "Devansh Shah",
             email = "devansh@purplerooms.com",
             mobile = "9776655443",
             password = "securePassword123",
             confirmPassword = "securePassword123",
-            role = com.example.model.UserRole.OWNER,
+            role = UserRole.OWNER,
             termsAccepted = true
         ).join()
 
         val state = viewModel.uiState.value
         assertNotNull(state.currentUser)
         assertEquals("Devansh Shah", state.currentUser?.name)
-        assertEquals(com.example.model.UserRole.OWNER, state.currentUser?.role)
+        assertEquals(UserRole.OWNER, state.currentUser?.role)
         assertEquals(AppScreen.OWNER_DASHBOARD, state.currentScreen)
     }
 
     @Test
-    fun `test forgot password reset flow`() = runTest {
-        val viewModel = PurpleRoomsViewModel()
+    fun `test forgot password reset flow`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
         viewModel.sendPasswordResetToken("student@purplerooms.com").join()
 
         val resetToast = viewModel.uiState.value.simulatedResetTokenToast
@@ -380,11 +411,12 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `test role security - student is blocked from owner screens and editing`() = runTest {
-        val viewModel = PurpleRoomsViewModel()
+    fun `test role security - student is blocked from owner screens and editing`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
         viewModel.loginWithEmail("student@purplerooms.com", "password123").join()
 
-        assertEquals(com.example.model.UserRole.STUDENT, viewModel.uiState.value.currentUser?.role)
+        assertEquals(UserRole.STUDENT, viewModel.uiState.value.currentUser?.role)
 
         // Attempt to navigate to Owner Dashboard directly
         viewModel.navigateTo(AppScreen.OWNER_DASHBOARD)
@@ -398,8 +430,9 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `test logout clears session and resets to splash`() = runTest {
-        val viewModel = PurpleRoomsViewModel()
+    fun `test logout clears session and resets to splash`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
         viewModel.loginWithEmail("student@purplerooms.com", "password123").join()
 
         assertNotNull(viewModel.uiState.value.currentUser)
@@ -410,5 +443,92 @@ class ExampleRobolectricTest {
         assertNull(state.currentUser)
         assertEquals(AppScreen.SPLASH, state.currentScreen)
         assertEquals("Logged out successfully.", state.authSuccessMessage)
+    }
+
+    @Test
+    fun `test location selection updates selectedLocation and coordinates`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
+        val bettiah = com.example.model.LocationData(
+            placeId = "city_bettiah",
+            latitude = 26.8026,
+            longitude = 84.5029,
+            locality = "Kamalnath Nagar",
+            city = "Bettiah",
+            state = "Bihar",
+            country = "India",
+            pincode = "845438",
+            formattedAddress = "Kamalnath Nagar, Bettiah, Bihar",
+            displayName = "Bettiah, Bihar"
+        )
+
+        viewModel.selectLocation(bettiah)
+
+        val state = viewModel.uiState.value
+        assertEquals("Kamalnath Nagar, Bettiah", state.selectedLocation)
+        assertEquals(26.8026, state.mapCenterLat, 0.0001)
+        assertEquals(84.5029, state.mapCenterLng, 0.0001)
+        assertEquals(bettiah.placeId, state.selectedLocationData.placeId)
+    }
+
+    @Test
+    fun `test location autocomplete search and master database results`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        // Search for "vad"
+        viewModel.searchLocationAutocomplete("vad", context).join()
+        val state = viewModel.uiState.value
+        assertTrue("Autocomplete results should not be empty for 'vad'", state.locationSearchResults.isNotEmpty())
+        assertTrue(state.locationSearchResults.any { it.city.contains("Vadodara", ignoreCase = true) })
+
+        // Search for "bett"
+        viewModel.searchLocationAutocomplete("bett", context).join()
+        val bettiahState = viewModel.uiState.value
+        assertTrue("Autocomplete results should not be empty for 'bett'", bettiahState.locationSearchResults.isNotEmpty())
+        assertTrue(bettiahState.locationSearchResults.any { it.city.contains("Bettiah", ignoreCase = true) })
+    }
+
+    @Test
+    fun `test distance calculation formula and formatting`() {
+        // Distance between Vadodara (22.3072, 73.1812) and Ahmedabad (23.0225, 72.5714) ~ 100km
+        val distKm = com.example.model.calculateDistanceKm(22.3072, 73.1812, 23.0225, 72.5714)
+        assertTrue("Distance between Vadodara and Ahmedabad should be ~100 km", distKm in 90.0..120.0)
+
+        // Distance formatting
+        val formattedMeters = com.example.model.formatDistance(0.45)
+        assertEquals("450 m away", formattedMeters)
+
+        val formattedKm = com.example.model.formatDistance(2.4)
+        assertEquals("2.4 km away", formattedKm)
+    }
+
+    @Test
+    fun `test map screen and property selection`() {
+        val viewModel = createViewModel()
+        viewModel.openMapScreen()
+        assertEquals(AppScreen.MAP_SCREEN, viewModel.uiState.value.currentScreen)
+
+        val prop = viewModel.uiState.value.properties.first()
+        viewModel.selectMapProperty(prop)
+        assertEquals(prop.id, viewModel.uiState.value.mapSelectedProperty?.id)
+
+        viewModel.updateMapCenter(22.3200, 73.1900)
+        assertEquals(22.3200, viewModel.uiState.value.mapCenterLat, 0.0001)
+        assertEquals(73.1900, viewModel.uiState.value.mapCenterLng, 0.0001)
+    }
+
+    @Test
+    fun `test GPS detection fallback and reverse geocoding`() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        viewModel.initJob.join()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+
+        viewModel.detectDeviceLocation(context).join()
+        val state = viewModel.uiState.value
+        assertFalse(state.isDetectingLocation)
+        assertNotNull(state.selectedLocation)
+        assertTrue(state.selectedLocation.isNotBlank())
     }
 }

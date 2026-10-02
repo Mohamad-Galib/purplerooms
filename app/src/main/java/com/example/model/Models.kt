@@ -43,10 +43,14 @@ data class Property(
     val title: String,
     val propertyType: PropertyType,
     val location: String,
+    val address: String = location,
     val locality: String = "Alkapuri",
     val city: String = "Vadodara",
     val state: String = "Gujarat",
+    val country: String = "India",
     val pincode: String = "390007",
+    val latitude: Double = 22.3072,
+    val longitude: Double = 73.1812,
     val rent: Int,
     val deposit: Int = 1000,
     @DrawableRes val images: List<Int>,
@@ -83,6 +87,41 @@ data class Property(
         Landmark("Vadodara Railway Station", "3.5 km", "train")
     )
 )
+
+data class LocationData(
+    val placeId: String = "loc_vadodara_alkapuri",
+    val latitude: Double = 22.3072,
+    val longitude: Double = 73.1812,
+    val locality: String = "Alkapuri",
+    val city: String = "Vadodara",
+    val state: String = "Gujarat",
+    val country: String = "India",
+    val pincode: String = "390007",
+    val formattedAddress: String = "Alkapuri, Vadodara, Gujarat",
+    val displayName: String = "Vadodara, Gujarat",
+    val isCurrentGpsLocation: Boolean = false,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+fun calculateDistanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val earthRadiusKm = 6371.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return earthRadiusKm * c
+}
+
+fun formatDistance(distanceKm: Double): String {
+    return if (distanceKm < 1.0) {
+        val meters = (distanceKm * 1000).toInt().coerceAtLeast(50)
+        "$meters m away"
+    } else {
+        "%.1f km away".format(distanceKm)
+    }
+}
 
 enum class BookingStatus(val label: String) {
     CONFIRMED("Confirmed"),

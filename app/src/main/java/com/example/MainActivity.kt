@@ -148,6 +148,22 @@ fun PurpleRoomsApp(
                         )
                     }
 
+                    AppScreen.CHOOSE_LOCATION -> {
+                        ChooseLocationScreen(
+                            uiState = uiState,
+                            viewModel = viewModel,
+                            onBackClick = { viewModel.navigateBack() }
+                        )
+                    }
+
+                    AppScreen.MAP_SCREEN -> {
+                        MapScreen(
+                            uiState = uiState,
+                            viewModel = viewModel,
+                            onBackClick = { viewModel.navigateBack() }
+                        )
+                    }
+
                     AppScreen.STUDENT_HOME -> {
                         HomeScreen(
                             uiState = uiState,
@@ -176,7 +192,8 @@ fun PurpleRoomsApp(
                             onBackClick = { viewModel.navigateBack() },
                             onFavoriteToggle = { viewModel.toggleFavorite(uiState.selectedProperty.id) },
                             onChatClick = { viewModel.openOwnerChat(uiState.selectedProperty) },
-                            onBookNowClick = { viewModel.startBooking(uiState.selectedProperty) }
+                            onBookNowClick = { viewModel.startBooking(uiState.selectedProperty) },
+                            onMapClick = { viewModel.openMapScreen() }
                         )
                     }
 
